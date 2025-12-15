@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Admin Portal — Entries, Emails, Analytics</title>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+
+<style>
+:root { --card-bg:#fff; --page-bg:#f3f6fb; --accent:#2a4dff; --muted:#666; }
+body { margin:0; font-family: Inter, Arial, sans-serif; background:var(--page-bg); color:#222; }
+.wrap { max-width:1200px; margin:28px auto; padding:20px; }
+header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+h1 { margin:0; font-size:20px; color:var(--accent); }
+.tabs { display:flex; gap:8px; }
+.tab { padding:8px 12px; background:#fff; border-radius:8px; cursor:pointer; border:1px solid #e6e9f2;}
+.tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.content { background:var(--card-bg); padding:18px; border-radius:10px; box-shadow:0 6px 18px rgba(18,35,80,0.06); }
+
+/* Tables */
+.table-wrap { overflow:auto; margin-top:6px; }
+table { border-collapse:collapse; width:1600px; min-width:100%; }
+th, td { border:1px solid #e6e9f2; padding:8px 10px; font-size:13px; vertical-align:top; }
+th { background: linear-gradient(180deg,#2a4dff,#1636d6); color:#fff; position:sticky; top:0; z-index:2; }
+tbody tr:nth-child(even){ background:#fbfcff; }
+.muted { color:var(--muted); font-size:13px; }
+
+/* Emails table */
+.emails-table { width:100%; border-collapse:collapse; }
+.emails-table th { background:#2d3748; color:#fff; }
+
+/* Analytics grid */
+.analytics-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:18px; margin-top:12px; }
+.chart-card { background:#fff; padding:12px; border-radius:10px; border:1px solid #eef2ff; box-shadow:0 4px 14px rgba(18,35,80,0.03); }
+.chart-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.chart-title { font-weight:600; font-size:14px; color:#123; }
+.chart-controls { display:flex; gap:8px; align-items:center; }
+select { padding:6px 8px; border-radius:6px; border:1px solid #ddd; background:#fff; }
+
+/* Stats section */
+.stats-section { margin-top:24px; }
+.stats-section h2 { margin-bottom:12px; font-size:16px; color:#2a4dff; }
+.stats-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+.stats-table th, .stats-table td { border:1px solid #e6e9f2; padding:6px 10px; font-size:13px; }
+.stats-table th { background:#eef5ff; }
+
+/* Small helpers */
+.status { margin:10px 0; color:var(--muted); }
+.center { text-align:center; }
+.small { font-size:12px; color:#666; }
+.topbar { display:flex; gap:12px; align-items:center; }
+.refresh { padding:6px 10px; border-radius:8px; background:#fff; border:1px solid #e6e9f2; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Admin Portal — Survey</h1>
+      <div class="small muted">Entries & analytics</div>
+    </div>
+    <div class="topbar">
+      <div class="tabs">
+        <div class="tab active" data-tab="entries">Entries</div>
+        <div class="tab" data-tab="emails">Emails</div>
+        <div class="tab" data-tab="analytics">Analytics</div>
+        <div class="tab" data-tab="web-insights">Web Insights</div>
+      </div>
+      <button class="refresh" id="refreshBtn">Refresh</button>
+    </div>
+  </header>
+
+  <div class="content">
+    <!-- ENTRIES -->
+    <div id="entriesPanel">
+      <div class="status" id="entriesStatus">Loading entries...</div>
+      <div class="table-wrap">
+        <table id="entriesTable">
+          <thead id="entriesHead"></thead>
+          <tbody id="entriesBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- EMAILS -->
+    <div id="emailsPanel" style="display:none;">
+      <div class="status" id="emailsStatus">Loading emails...</div>
+      <div style="overflow:auto;">
+        <table class="emails-table" id="emailsTable">
+          <thead>
+            <tr><th>S.No</th><th>Name</th><th>Email</th></tr>
+          </thead>
+          <tbody id="emailsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ANALYTICS -->
+    <div id="analyticsPanel" style="display:none;">
+      <div class="status" id="analyticsStatus">Loading analytics...</div>
+      <div class="analytics-grid" id="chartsGrid"></div>
+      <div class="stats-section" id="statsSection">
+        <h2>Stats & Percentages</h2>
+        <div id="statsContent"></div>
+      </div>
+    </div>
+
+    <!-- WEB INSIGHTS -->
+    <div id="web-insightsPanel" style="display:none;">
+      <div class="status" id="webInsightsStatus">Loading web insights...</div>
+      <canvas id="webInsightsChart" style="margin-top:12px;"></canvas>
+      <div style="overflow:auto; margin-top:12px;">
+        <table id="webInsightsTable" class="stats-table">
+          <thead>
+            <tr>
+              <th style="color:black">Date</th>
+              <th style="color:black">Page Visits</th>
+              <th style="color:black">Submissions (English)</th>
+              <th style="color:black">Submissions (Hindi)</th>
+              <th style="color:black">Emails Collected</th>
+            </tr>
+          </thead>
+          <tbody id="webInsightsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUB_URL = "http://localhost:5000/api/submissions";
+const EMAILS_URL = "http://localhost:5000/api/emails";
+const INSIGHTS_URL = "http://localhost:5000/api/analytics";
+
+const analyticsFields = [
+  "employment_status","job_finding","education_level","industry","job_satisfaction",
+  "job_matches_skills","dei_job_offer","workplace_challenges","career_confidence",
+  "formal_training","training_helped","desired_training","platform_interest","dei_policy",
+  "dei_tokenistic","safety_identity","trans_org_help","bias_freelance","prefer_freelance",
+  "career_obstacles","platform_usage","dei_job_reason","workplace_inclusion_suggestion","career_goal_3yr"
+];
+const pieDefaults = new Set([
+  "employment_status","job_matches_skills","dei_job_offer","formal_training",
+  "training_helped","platform_interest","dei_policy","trans_org_help",
+  "bias_freelance","prefer_freelance","career_obstacles","platform_usage"
+]);
+
+let submissions=[];
+let charts={};
+
+// --- TAB SWITCHING
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    const which = tab.dataset.tab;
+    document.getElementById('entriesPanel').style.display = which==='entries'?'':'none';
+    document.getElementById('emailsPanel').style.display = which==='emails'?'':'none';
+    document.getElementById('analyticsPanel').style.display = which==='analytics'?'':'none';
+    document.getElementById('web-insightsPanel').style.display = which==='web-insights'?'':'none';
+    if(which==='analytics') loadAnalytics();
+    if(which==='web-insights') loadWebInsights();
+  });
+});
+
+// --- REFRESH
+document.getElementById('refreshBtn').addEventListener('click',()=>loadAll());
+
+// --- ENTRIES
+async function loadEntries(){
+  const status = document.getElementById('entriesStatus');
+  try{
+    status.textContent='Loading entries...';
+    const res = await fetch(SUB_URL);
+    submissions = await res.json();
+    if(!submissions.length){ status.textContent='No entries'; return; }
+
+    status.textContent=`${submissions.length} entries loaded`;
+    const fields = Object.keys(submissions[0]).filter(f=>f!=='_id');
+    const head = document.getElementById('entriesHead');
+    const body = document.getElementById('entriesBody');
+    head.innerHTML = '<tr><th>S.No</th>'+fields.map(f=>`<th>${f}</th>`).join('')+'</tr>';
+    body.innerHTML = submissions.map((row,i)=>`<tr><td>${i+1}</td>`+fields.map(f=>`<td>${escapeHTML(renderCell(row[f]))}</td>`).join('')+'</tr>').join('');
+  }catch(e){ console.error(e); status.textContent='Error loading entries'; }
+}
+
+// --- EMAILS
+async function loadEmails(){
+  const status = document.getElementById('emailsStatus');
+  try{
+    const res = await fetch(EMAILS_URL);
+    const data = res.ok?await res.json():[];
+    if(!data.length){ status.textContent='No emails'; return; }
+    status.textContent=`${data.length} emails loaded`;
+    document.getElementById('emailsBody').innerHTML = data.map((e,i)=>`<tr><td>${i+1}</td><td>${escapeHTML(e.name)}</td><td>${escapeHTML(e.email)}</td></tr>`).join('');
+  }catch(e){ console.error(e); status.textContent='Emails load error'; }
+}
+
+// --- ANALYTICS
+async function loadAnalytics(){
+  const status = document.getElementById('analyticsStatus');
+  const grid = document.getElementById('chartsGrid');
+  const statsDiv = document.getElementById('statsContent');
+  grid.innerHTML=''; statsDiv.innerHTML='';
+  if(!submissions.length){ status.textContent='No entries for analytics'; return; }
+  status.textContent='Rendering analytics...';
+
+  Object.values(charts).forEach(c=>c.destroy?.());
+  charts={};
+
+  for(const field of analyticsFields){
+    const counts={};
+    submissions.forEach(sub=>{
+      let val = sub[field] ?? sub.answers?.[field] ?? 'No response';
+      if(val===true) val='Yes'; else if(val===false) val='No';
+      counts[val] = (counts[val]||0)+1;
+    });
+    if(!Object.keys(counts).length) continue;
+
+    // Chart card
+    const card = document.createElement('div'); card.className='chart-card';
+    const defaultType = pieDefaults.has(field)?'pie':'bar';
+    card.innerHTML = `<div class="chart-head">
+      <div class="chart-title">${niceTitle(field)}</div>
+      <div class="chart-controls">
+        <label class="small muted">Chart:</label>
+        <select data-field="${field}" class="chartTypeSelect">
+          <option value="pie"${defaultType==='pie'?' selected':''}>Pie</option>
+          <option value="bar"${defaultType==='bar'?' selected':''}>Bar</option>
+        </select>
+      </div>
+    </div>
+    <canvas id="chart_${field}"></canvas>`;
+    grid.appendChild(card);
+
+    const prepared = prepareCounts(counts, 10);
+    const ctx = card.querySelector(`#chart_${field}`).getContext('2d');
+    charts[field] = new Chart(ctx, makeChartConfig(prepared.labels, prepared.values, defaultType, true));
+
+    card.querySelector('.chartTypeSelect').addEventListener('change', e=>{
+      const t = e.target.value;
+      charts[field]?.destroy();
+      charts[field] = new Chart(ctx, makeChartConfig(prepared.labels, prepared.values, t, true));
+    });
+
+    // Stats table
+    const total = Object.values(counts).reduce((a,b)=>a+b,0);
+    const table = document.createElement('table'); table.className='stats-table';
+    table.innerHTML = `<thead><tr><th style="color:black">Option</th><th style="color:black">Count</th><th style="color:black">Percentage</th></tr></thead>
+      <tbody>${Object.entries(counts).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td><td>${((v/total)*100).toFixed(1)}%</td></tr>`).join('')}</tbody>`;
+    const container = document.createElement('div'); container.className='stats-question';
+    container.innerHTML=`<h3>${niceTitle(field)}</h3>`; container.appendChild(table);
+    statsDiv.appendChild(container);
+  }
+
+  status.textContent='Analytics ready';
+}
+
+// --- WEB INSIGHTS
+async function loadWebInsights(){
+  const status = document.getElementById('webInsightsStatus');
+  try{
+    status.textContent = 'Fetching web analytics...';
+    const res = await fetch(INSIGHTS_URL);
+    const data = await res.json();
+    if(!data.length){ status.textContent='No web analytics'; return; }
+
+    // Helper to convert MongoDB number objects to JS numbers
+    function parseMongoNumber(val){
+      if(val && typeof val === 'object'){
+        if('$numberInt' in val) return parseInt(val['$numberInt'],10);
+        if('$numberDouble' in val) return parseFloat(val['$numberDouble']);
+      }
+      return val ?? 0;
+    }
+
+    data.sort((a,b) => new Date(a.date) - new Date(b.date));
+    const labels = data.map(d => d.date);
+    const visits = data.map(d => parseMongoNumber(d.visits));
+    const emails = data.map(d => parseMongoNumber(d.emails));
+    const englishSub = data.map(d => parseMongoNumber(d.forms?.english));
+    const hindiSub = data.map(d => parseMongoNumber(d.forms?.hindi));
+
+    const ctx = document.getElementById('webInsightsChart').getContext('2d');
+    new Chart(ctx,{
+      type:'bar',
+      data:{
+        labels,
+        datasets:[
+          {label:'Visits', data:visits, backgroundColor:'#36A2EB'},
+          {label:'Emails', data:emails, backgroundColor:'#FF6384'},
+          {label:'Submissions (English)', data:englishSub, backgroundColor:'#FFCD56'},
+          {label:'Submissions (Hindi)', data:hindiSub, backgroundColor:'#4BC0C0'}
+        ]
+      },
+      options:{
+        responsive:true,
+        plugins:{ legend:{position:'top'} },
+        scales:{ y:{ beginAtZero:true } }
+      }
+    });
+
+    const tbody = document.getElementById('webInsightsBody');
+    tbody.innerHTML = data.map(d => `
+      <tr>
+        <td>${d.date}</td>
+        <td>${parseMongoNumber(d.visits)}</td>
+        <td>${parseMongoNumber(d.forms?.english)}</td>
+        <td>${parseMongoNumber(d.forms?.hindi)}</td>
+        <td>${parseMongoNumber(d.emails)}</td>
+      </tr>
+    `).join('');
+
+    status.textContent = 'Web analytics loaded';
+  }catch(e){
+    console.error(e);
+    status.textContent = 'Error loading web analytics';
+  }
+}
+
+
+// --- UTILITIES
+function prepareCounts(countsObj, topN=10){
+  const entries = Object.entries(countsObj).sort((a,b)=>b[1]-a[1]);
+  if(entries.length<=topN) return { labels:entries.map(e=>e[0]), values:entries.map(e=>e[1]) };
+  const top = entries.slice(0,topN); const other = entries.slice(topN).reduce((s,e)=>s+e[1],0);
+  return { labels: top.map(t=>t[0]).concat(['Other']), values: top.map(t=>t[1]).concat([other]) };
+}
+
+function makeChartConfig(labels, values, type='pie', showPercent=false){
+  const colors = generateColors(labels.length);
+  const ds = { data: values, backgroundColor: colors };
+  if(type==='pie'){
+    return { type:'pie', data:{ labels, datasets:[ds] },
+      options:{ responsive:true, plugins:{ legend:{position:'right'}, datalabels:{formatter:(val)=> showPercent?((val/values.reduce((a,b)=>a+b))*100).toFixed(1)+'%':val, font:{weight:'bold'}} } },
+      plugins:[ChartDataLabels] };
+  } else {
+    return { type:'bar', data:{ labels, datasets:[{...ds, label:'Count'}] },
+      options:{ responsive:true, plugins:{ legend:{display:false}, datalabels:{formatter:(val)=> showPercent?((val/values.reduce((a,b)=>a+b))*100).toFixed(1)+'%':val} } },
+      plugins:[ChartDataLabels], scales:{ y:{ beginAtZero:true } } };
+  }
+}
+
+function niceTitle(field){ return field.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); }
+function generateColors(n){ const base=['#4BC0C0','#FF6384','#FFCD56','#36A2EB','#9966FF','#FF9F40','#8AD66A','#C77DFF','#6C9EEB','#F87171']; const out=[]; for(let i=0;i<n;i++) out.push(base[i%base.length]); return out; }
+function renderCell(val){ if(val===null||val===undefined) return ''; if(typeof val==='object'){ try{ return JSON.stringify(val);}catch(e){return String(val);} } return String(val); }
+function escapeHTML(s){ return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// --- LOAD ALL
+async function loadAll(){ await Promise.all([loadEntries(), loadEmails(), loadAnalytics()]); }
+loadAll();
+</script>
+</body>
+</html>
