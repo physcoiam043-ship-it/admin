@@ -69,7 +69,17 @@ app.post("/verify", (req, res) => {
 // 3. AUTH MIDDLEWARE
 // -------------------------------
 function requireAuth(req, res, next) {
-  const token = req.headers.authorization;
+  let token = req.headers.authorization;
+
+  // Support: Authorization: Bearer <token>
+  if (token && token.startsWith("Bearer ")) {
+    token = token.slice(7);
+  }
+
+  // Fallback: token sent in body (older frontend calls)
+  if (!token && req.body?.token) {
+    token = req.body.token;
+  }
 
   if (!token || !VALID_TOKENS.has(token)) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -77,6 +87,7 @@ function requireAuth(req, res, next) {
 
   next();
 }
+
 
 // -------------------------------
 // 4. API — GET ALL SUBMISSIONS (PROTECTED)
