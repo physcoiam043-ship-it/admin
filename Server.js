@@ -56,14 +56,25 @@ app.post("/login", (req, res) => {
 });
 
 app.post("/verify", (req, res) => {
-  const { token } = req.body;
+  let token = req.headers.authorization;
 
-  if (VALID_TOKENS.has(token)) {
+  // Support: Authorization: Bearer <token>
+  if (token && token.startsWith("Bearer ")) {
+    token = token.slice(7);
+  }
+
+  // Fallback: token sent in body
+  if (!token && req.body?.token) {
+    token = req.body.token;
+  }
+
+  if (token && VALID_TOKENS.has(token)) {
     return res.json({ valid: true });
   }
 
   res.status(401).json({ valid: false });
 });
+
 
 // -------------------------------
 // 3. AUTH MIDDLEWARE
